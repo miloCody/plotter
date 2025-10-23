@@ -6,15 +6,17 @@ from io import BytesIO
 # --- Page setup ---
 st.set_page_config(page_title="Intersection Plotter", layout="wide")
 
-# --- Session state for measurements ---
+# --- Session state for measurements and plot ---
 if 'measurements' not in st.session_state:
     st.session_state.measurements = [["", ""]]  # Start with 1 row
-
 if 'plot_fig' not in st.session_state:
     st.session_state.plot_fig = None  # Store last figure
 
 # --- Section/Square name ---
 section_name = st.text_input("Section / Square", value="Section 8 Square 42")
+
+# --- Initialize deletion flag ---
+delete_index = None
 
 # --- Display measurement rows ---
 st.write("### Measurements (West / East in cm)")
@@ -23,19 +25,20 @@ for i, measurement in enumerate(st.session_state.measurements):
     measurement[0] = row_cols[0].text_input(f"West F{i+1}", value=measurement[0], key=f"west_{i}")
     measurement[1] = row_cols[1].text_input(f"East F{i+1}", value=measurement[1], key=f"east_{i}")
     if row_cols[2].button("Delete", key=f"del_{i}"):
-        st.session_state.measurements.pop(i)
-        st.experimental_rerun()
+        delete_index = i  # Mark for deletion
+
+# --- Handle deletion after loop ---
+if delete_index is not None:
+    st.session_state.measurements.pop(delete_index)
 
 # --- Add / Clear buttons below measurements ---
 btn_cols = st.columns([1,1])
 if btn_cols[0].button("Add Measurement"):
     st.session_state.measurements.append(["", ""])
-    st.experimental_rerun()
 
 if btn_cols[1].button("Clear Plot & Measurements"):
     st.session_state.measurements = [["", ""]]
     st.session_state.plot_fig = None
-    st.experimental_rerun()
 
 # --- Plot button ---
 plot_clicked = st.button("Plot Intersections")
