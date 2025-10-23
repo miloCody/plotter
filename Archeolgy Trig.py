@@ -1,46 +1,89 @@
 import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
-from io import BytesIO
 
-# --- App state: Measurements ---
-if "measurements" not in st.session_state:
-    st.session_state.measurements = [(0.0, 0.0)]  # start with one row
+# --- Page setup ---
+st.set_page_config(page_title="Intersection Plotter", layout="wide")
 
-# --- UI Layout ---
-st.title("Intersection Plotter")
-section_name = st.text_input("Section / Square:", value="Section 8 Square 42")
+# --- Session state for measurements ---
+if 'measurements' not in st.session_state:
+    st.session_state.measurements = [["", ""]]  # Start with 1 row
 
-st.subheader("Measurements (West / East in cm)")
+# --- Section/Square name ---
+section_name = st.text_input("Section / Square", value="Section 8 Square 42")
 
-# Dynamic measurement rows
-for i, (west, east) in enumerate(st.session_state.measurements):
-    cols = st.columns([1, 1, 1, 1])
-    with cols[0]:
-        st.write(f"F{i+1}:")
-    with cols[1]:
-        st.session_state.measurements[i] = (st.number_input(f"West {i+1}", value=west, key=f"west{i}"),
-                                            st.session_state.measurements[i][1])
-    with cols[2]:
-        st.session_state.measurements[i] = (st.session_state.measurements[i][0],
-                                            st.number_input(f"East {i+1}", value=east, key=f"east{i}"))
-    with cols[3]:
-        if st.button("Delete", key=f"del{i}"):
-            st.session_state.measurements.pop(i)
-            st.experimental_rerun()  # refresh to update indices
-
+# --- Add measurement button ---
 if st.button("Add Measurement"):
-    st.session_state.measurements.append((0.0, 0.0))
-    st.experimental_rerun()
+    st.session_state.measurements.append(["", ""])
 
-# --- Plot Intersections ---
-def calculate_intersections(measurements, d=350):
+# --- Display measurement rows ---
+st.write("### Measurements (West / East in cm)")
+cols = st.columns([3, 3, 1])
+for i, measurement in enumerate(st.session_state.measurements):
+    row_cols = st.columns([3, 3, 1])
+    measurement[0] = row_cols[0].text_input(f"West F{i+1}", value=measurement[0], key=f"west_{i}")
+    measurement[1] = row_cols[1].text_input(f"East F{i+1}", value=measurement[1], key=f"east_{i}")
+    if row_cols[2].button("Delete", key=f"del_{i}"):
+        st.session_state.measurements.pop(i)
+        st.experimental_rerun()
+
+# --- Plot button ---
+plot_clicked = st.button("Plot Intersections")
+
+# --- Output area ---
+results_area = st.empty()
+plot_area = st.empty()
+
+if plot_clicked:
+    # --- Grid parameters ---
+    side_length = 350
+    grid_spacing = 10
+    tick_interval = 50
+
+    east_pivot_x = 350
+    west_pivot_x = 0
+    d = east_pivot_x - west_pivot_x
+
     valid_points = []
     invalid_pairs = []
 
-    for i, (west_distance, east_distance) in enumerate(measurements, start=1):
-        label = f"F{i}"
+    # --- Create figure ---
+    fig, ax = plt.subplots(figsize=(6, 6), dpi=100)
+    ax.set_xlim(0, side_length)
+    ax.set_ylim(0, side_length)
+    ax.set_aspect('equal', adjustable='box')
 
+    # Grid lines
+    lines = np.arange(0, side_length + grid_spacing, grid_spacing)
+    for x in lines:
+        ax.plot([x, x], [0, side_length], color='gray', linewidth=0.8)
+    for y in lines:
+        ax.plot([0, side_length], [y, y], color='gray', linewidth=0.8)
+
+    # Ticks
+    ticks = np.arange(0, side_length + tick_interval, tick_interval)
+    ax.set_xticks(ticks)
+    ax.set_yticks(ticks)
+    ax.set_xticklabels([str(int(t)) for t in ticks])
+    ax.set_yticklabels([str(int(t)) for t in ticks])
+
+    # Labels
+    ax.set_xlabel(section_name)
+    ax.set_ylabel("Scale: 1 square = 10cm")
+    ax.set_title("North ↑")
+    for spine in ax.spines.values():
+        spine.set_linewidth(2)
+
+    # --- Process measurements ---
+    for i, (west_val, east_val) in enumerate(st.session_state.measurements):
+        label = f"F{i+1}"
+        try:
+            west_distance = float(west_val)
+            east_distance = float(east_val)
+        except ValueError:
+            continue
+
+        # Validation
         if d > west_distance + east_distance:
             invalid_pairs.append((label, west_distance, east_distance, "too far apart"))
             continue
@@ -57,69 +100,32 @@ def calculate_intersections(measurements, d=350):
         h = np.sqrt(h_sq)
         x_intersect = a
         y_intersect = h
+
         valid_points.append((label, x_intersect, y_intersect))
+        ax.plot(x_intersect, y_intersect, 'go', markersize=6)
 
-    return valid_points, invalid_pairs
-
-def plot_grid(valid_points, section_name):
-    side_length = 350
-    grid_spacing = 10
-    tick_interval = 50
-
-    fig, ax = plt.subplots(figsize=(6,6), dpi=100)
-    ax.set_xlim(0, side_length)
-    ax.set_ylim(0, side_length)
-    ax.set_aspect('equal', adjustable='box')
-
-    # Grid lines
-    lines = np.arange(0, side_length + grid_spacing, grid_spacing)
-    for x in lines:
-        ax.plot([x,x],[0,side_length], color='gray', linewidth=0.8)
-    for y in lines:
-        ax.plot([0,side_length],[y,y], color='gray', linewidth=0.8)
-
-    # Ticks
-    ticks = np.arange(0, side_length + tick_interval, tick_interval)
-    ax.set_xticks(ticks)
-    ax.set_yticks(ticks)
-    ax.set_xticklabels([str(int(t)) for t in ticks])
-    ax.set_yticklabels([str(int(t)) for t in ticks])
-
-    # Labels
-    ax.set_xlabel(section_name)
-    ax.set_ylabel("Scale: 1 square = 10cm")
-    ax.set_title("North ↑")
-
-    for label, x, y in valid_points:
-        ax.plot(x, y, 'go', markersize=6)
-        offset_x = 8 if int(label[1:]) % 2 == 0 else -12
-        offset_y = 8 if int(label[1:]) % 3 == 0 else -10
-        ax.text(x + offset_x, y + offset_y, label,
+        # Label offsets
+        offset_x = 8 if i % 2 == 0 else -12
+        offset_y = 8 if i % 3 == 0 else -10
+        ax.text(x_intersect + offset_x, y_intersect + offset_y, label,
                 color='black', fontsize=8, fontweight='bold',
                 bbox=dict(facecolor='white', edgecolor='none', alpha=0.6, pad=0.5))
 
-    return fig
-
-if st.button("Plot Intersections"):
-    valid_points, invalid_pairs = calculate_intersections(st.session_state.measurements)
-
-    st.subheader("Results")
+    # --- Display results ---
+    result_text = ""
     if valid_points:
-        st.write("**Intersecting Points Found:**")
+        result_text += "Intersecting Points Found:\n"
         for label, x, y in valid_points:
-            st.write(f"{label}: x = {x:.1f} cm, y = {y:.1f} cm")
+            result_text += f"  {label}: x = {x:.1f} cm, y = {y:.1f} cm\n"
     else:
-        st.write("No valid intersections found.")
+        result_text += "No valid intersections found.\n"
 
     if invalid_pairs:
-        st.write("**Non-intersecting Pairs:**")
+        result_text += "\nNon-intersecting Pairs:\n"
         for label, w, e, reason in invalid_pairs:
-            st.write(f"{label}: west={w}, east={e} --> {reason}")
+            result_text += f"  {label}: west={w}, east={e} --> {reason}\n"
 
-    fig = plot_grid(valid_points, section_name)
-    st.pyplot(fig)
+    results_area.text_area("Results", value=result_text, height=300)
 
-    # Save plot as PNG
-    buf = BytesIO()
-    fig.savefig(buf, format="png", dpi=300)
-    st.download_button("Download Plot as PNG", data=buf.getvalue(), file_name="intersection_plot.png", mime="image/png")
+    # --- Show plot ---
+    plot_area.pyplot(fig)
