@@ -1,36 +1,60 @@
 import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
+from io import BytesIO
 
 # --- Page setup ---
 st.set_page_config(page_title="Intersection Plotter", layout="wide")
 
-# --- Session state for measurements ---
+# --- Session state ---
 if 'measurements' not in st.session_state:
     st.session_state.measurements = [["", ""]]  # Start with 1 row
+if 'plot_fig' not in st.session_state:
+    st.session_state.plot_fig = None
+if 'to_delete' not in st.session_state:
+    st.session_state.to_delete = None
+if 'to_add' not in st.session_state:
+    st.session_state.to_add = False
 
 # --- Section/Square name ---
 section_name = st.text_input("Section / Square", value="Section 8 Square 42")
 
-# --- Add measurement button ---
+# --- Handle Add / Delete buttons first ---
 if st.button("Add Measurement"):
+    st.session_state.to_add = True
+
+# Mark deletion for any delete buttons
+for i in range(len(st.session_state.measurements)):
+    key = f"del_{i}"
+    if st.button(f"Delete F{i+1}", key=key):
+        st.session_state.to_delete = i
+
+# Apply add/delete actions before rendering the rows
+if st.session_state.to_add:
     st.session_state.measurements.append(["", ""])
+    st.session_state.to_add = False
+
+if st.session_state.to_delete is not None:
+    idx = st.session_state.to_delete
+    if 0 <= idx < len(st.session_state.measurements):
+        st.session_state.measurements.pop(idx)
+    st.session_state.to_delete = None
 
 # --- Display measurement rows ---
 st.write("### Measurements (West / East in cm)")
-cols = st.columns([3, 3, 1])
 for i, measurement in enumerate(st.session_state.measurements):
-    row_cols = st.columns([3, 3, 1])
+    row_cols = st.columns([3, 3])
     measurement[0] = row_cols[0].text_input(f"West F{i+1}", value=measurement[0], key=f"west_{i}")
     measurement[1] = row_cols[1].text_input(f"East F{i+1}", value=measurement[1], key=f"east_{i}")
-    if row_cols[2].button("Delete", key=f"del_{i}"):
-        st.session_state.measurements.pop(i)
-        st.experimental_rerun()
+
+# --- Clear Plot button ---
+if st.button("Clear Plot"):
+    st.session_state.plot_fig = None
 
 # --- Plot button ---
 plot_clicked = st.button("Plot Intersections")
 
-# --- Output area ---
+# --- Output and plot areas ---
 results_area = st.empty()
 plot_area = st.empty()
 
@@ -39,7 +63,6 @@ if plot_clicked:
     side_length = 350
     grid_spacing = 10
     tick_interval = 50
-
     east_pivot_x = 350
     west_pivot_x = 0
     d = east_pivot_x - west_pivot_x
@@ -126,6 +149,17 @@ if plot_clicked:
             result_text += f"  {label}: west={w}, east={e} --> {reason}\n"
 
     results_area.text_area("Results", value=result_text, height=300)
-
-    # --- Show plot ---
+    st.session_state.plot_fig = fig
     plot_area.pyplot(fig)
+
+# --- Save plot as PNG ---
+if st.session_state.plot_fig is not None:
+    buffer = BytesIO()
+    st.session_state.plot_fig.savefig(buffer, format="png")
+    buffer.seek(0)
+    st.download_button(
+        label="Save Plot as PNG",
+        data=buffer,
+        file_name="intersection_plot.png",
+        mime="image/png"
+    )
