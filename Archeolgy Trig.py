@@ -6,53 +6,64 @@ from io import BytesIO
 # --- Page setup ---
 st.set_page_config(page_title="Intersection Plotter", layout="wide")
 
-# --- Session state for measurements and plot ---
+# --- Session state ---
 if 'measurements' not in st.session_state:
     st.session_state.measurements = [["", ""]]  # Start with 1 row
 if 'plot_fig' not in st.session_state:
-    st.session_state.plot_fig = None  # Store last figure
+    st.session_state.plot_fig = None
+if 'to_delete' not in st.session_state:
+    st.session_state.to_delete = None
+if 'to_add' not in st.session_state:
+    st.session_state.to_add = False
+
+# --- Handle Add / Delete actions first ---
+if st.button("Add Measurement"):
+    st.session_state.to_add = True
+
+# Deletion is handled by storing index in session_state.to_delete
+for i in range(len(st.session_state.measurements)):
+    key = f"del_{i}"
+    if st.button(f"Delete F{i+1}", key=key):
+        st.session_state.to_delete = i
+
+# Apply add/delete actions **before rendering inputs**
+if st.session_state.to_add:
+    st.session_state.measurements.append(["", ""])
+    st.session_state.to_add = False
+
+if st.session_state.to_delete is not None:
+    idx = st.session_state.to_delete
+    if 0 <= idx < len(st.session_state.measurements):
+        st.session_state.measurements.pop(idx)
+    st.session_state.to_delete = None
 
 # --- Section/Square name ---
 section_name = st.text_input("Section / Square", value="Section 8 Square 42")
 
-# --- Initialize deletion flag ---
-delete_index = None
-
 # --- Display measurement rows ---
 st.write("### Measurements (West / East in cm)")
 for i, measurement in enumerate(st.session_state.measurements):
-    row_cols = st.columns([3, 3, 1])
+    row_cols = st.columns([3, 3])
     measurement[0] = row_cols[0].text_input(f"West F{i+1}", value=measurement[0], key=f"west_{i}")
     measurement[1] = row_cols[1].text_input(f"East F{i+1}", value=measurement[1], key=f"east_{i}")
-    if row_cols[2].button("Delete", key=f"del_{i}"):
-        delete_index = i  # Mark for deletion
 
-# --- Handle deletion after loop ---
-if delete_index is not None:
-    st.session_state.measurements.pop(delete_index)
-
-# --- Add / Clear buttons below measurements ---
-btn_cols = st.columns([1,1])
-if btn_cols[0].button("Add Measurement"):
-    st.session_state.measurements.append(["", ""])
-
-if btn_cols[1].button("Clear Plot & Measurements"):
+# --- Clear Plot & Measurements button ---
+clear_cols = st.columns([1,1])
+if clear_cols[0].button("Clear Plot & Measurements"):
     st.session_state.measurements = [["", ""]]
     st.session_state.plot_fig = None
 
 # --- Plot button ---
-plot_clicked = st.button("Plot Intersections")
+plot_clicked = clear_cols[1].button("Plot Intersections")
 
 # --- Output and plot areas ---
 results_area = st.empty()
 plot_area = st.empty()
 
 if plot_clicked:
-    # --- Grid parameters ---
     side_length = 350
     grid_spacing = 10
     tick_interval = 50
-
     east_pivot_x = 350
     west_pivot_x = 0
     d = east_pivot_x - west_pivot_x
@@ -60,7 +71,6 @@ if plot_clicked:
     valid_points = []
     invalid_pairs = []
 
-    # --- Create figure ---
     fig, ax = plt.subplots(figsize=(6, 6), dpi=100)
     ax.set_xlim(0, side_length)
     ax.set_ylim(0, side_length)
@@ -73,21 +83,18 @@ if plot_clicked:
     for y in lines:
         ax.plot([0, side_length], [y, y], color='gray', linewidth=0.8)
 
-    # Ticks
     ticks = np.arange(0, side_length + tick_interval, tick_interval)
     ax.set_xticks(ticks)
     ax.set_yticks(ticks)
     ax.set_xticklabels([str(int(t)) for t in ticks])
     ax.set_yticklabels([str(int(t)) for t in ticks])
 
-    # Labels
     ax.set_xlabel(section_name)
     ax.set_ylabel("Scale: 1 square = 10cm")
     ax.set_title("North ↑")
     for spine in ax.spines.values():
         spine.set_linewidth(2)
 
-    # --- Process measurements ---
     for i, (west_val, east_val) in enumerate(st.session_state.measurements):
         label = f"F{i+1}"
         try:
@@ -96,7 +103,6 @@ if plot_clicked:
         except ValueError:
             continue
 
-        # Validation
         if d > west_distance + east_distance:
             invalid_pairs.append((label, west_distance, east_distance, "too far apart"))
             continue
@@ -104,27 +110,23 @@ if plot_clicked:
             invalid_pairs.append((label, west_distance, east_distance, "one circle inside another"))
             continue
 
-        a = (west_distance ** 2 - east_distance ** 2 + d ** 2) / (2 * d)
-        h_sq = west_distance ** 2 - a ** 2
+        a = (west_distance**2 - east_distance**2 + d**2)/(2*d)
+        h_sq = west_distance**2 - a**2
         if h_sq < 0:
             invalid_pairs.append((label, west_distance, east_distance, "no real intersection"))
             continue
-
         h = np.sqrt(h_sq)
         x_intersect = a
         y_intersect = h
 
         valid_points.append((label, x_intersect, y_intersect))
         ax.plot(x_intersect, y_intersect, 'go', markersize=6)
-
-        # Label offsets
         offset_x = 8 if i % 2 == 0 else -12
         offset_y = 8 if i % 3 == 0 else -10
         ax.text(x_intersect + offset_x, y_intersect + offset_y, label,
                 color='black', fontsize=8, fontweight='bold',
                 bbox=dict(facecolor='white', edgecolor='none', alpha=0.6, pad=0.5))
 
-    # --- Display results ---
     result_text = ""
     if valid_points:
         result_text += "Intersecting Points Found:\n"
@@ -139,8 +141,6 @@ if plot_clicked:
             result_text += f"  {label}: west={w}, east={e} --> {reason}\n"
 
     results_area.text_area("Results", value=result_text, height=300)
-
-    # --- Show plot ---
     st.session_state.plot_fig = fig
     plot_area.pyplot(fig)
 
